@@ -1,12 +1,74 @@
-// TODO: Define your Token enum here
-// Hint: You need variants for:
-// LeftBrace, RightBrace, LeftBracket, RightBracket, Comma, Colon
-// String(String), Number(f64), Boolean(bool), Null
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+    LeftBrace,
+    RightBrace,
+    LeftBracket,
+    RightBracket,
+    Comma,
+    Colon,
+    String(String),
+    Number(f64),
+    Boolean(bool),
+    Null,
+}
 
-// TODO: Implement your tokenize function here
-// pub fn tokenize(input: &str) -> Vec<Token> {
-// // }
-// Your code goes here
+pub fn tokenize(input: &str) -> Vec<Token> {
+    let mut tokens = Vec::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(&ch) = chars.peek() {
+        match ch {
+            '{' => {
+                // push the left opening brace
+                tokens.push(Token::LeftBrace);
+                chars.next(); // consume the character
+            }
+            // push the right closing brace
+            '}' => {
+                tokens.push(Token::RightBrace);
+                chars.next(); // consume the character
+            }
+            // string parsing: collect chars between quotes
+            '"' => {
+                chars.next(); // consume the opening quote
+                let mut s = String::new();
+                // keep collecting characters until closing quote
+                while let Some(&ch) = chars.peek() {
+                    if ch == '"' {
+                        chars.next(); // consume closing quote
+                        break; // stop collecting
+                    }
+                    s.push(ch); // add character to our string
+                    chars.next(); // advance to the next character
+                }
+                // push the completed string token after the loop
+                tokens.push(Token::String(s));
+            }
+            // number parsing
+            '0'..='9' | '-' => {
+                let mut num_str = String::new();
+                while let Some(&ch) = chars.peek() {
+                    // only collect characters that are part of a number
+                    if ch.is_numeric() || ch == '.' || ch == '-' {
+                        num_str.push(ch); // add character to num_string
+                        chars.next(); // consume the character
+                    } else {
+                        break; // hit a nun number, stop
+                    }
+                }
+                // parse string to f64, unwrap for now (error handling in week 2)
+                let parsed = num_str.parse::<f64>().unwrap();
+                // push the completed number string token after the loop
+                tokens.push(Token::Number(parsed));
+            }
+            // catch all, must be last arm
+            _ => {
+                chars.next(); // still must advance or infinite loop.
+            }
+        } // closes match statement
+    } // closes while statement
+    tokens // Implicit Return statement (do not use return or add a semicolon)
+}
 
 #[cfg(test)]
 mod tests {
