@@ -4,23 +4,30 @@
 
 Rust learning project for cohort-based coursework. Contains exercises, assignments, and projects completed during the Rust programming course.
 
+## Project Structure
+
+- `rust-json-parser/` — A JSON tokenizer/parser built incrementally over multiple weeks
+
 ## Tech Stack
 
 - **Language**: Rust (latest stable)
-- **Build System**: Cargo
+- **Build System**: Cargo (workspace with member crates)
 - **Testing**: Built-in `cargo test`
 
 ## Development Commands
 
 ```bash
-# Build the project
+# Build all projects
 cargo build
 
-# Run the project
-cargo run
+# Run a specific project
+cargo run -p rust-json-parser
 
-# Run tests
+# Run all tests
 cargo test
+
+# Run tests for a specific project
+cargo test -p rust-json-parser
 
 # Check for compilation errors without building
 cargo check
