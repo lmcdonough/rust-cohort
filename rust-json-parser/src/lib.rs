@@ -13,5 +13,4 @@ mod tests {
     }
 }
 
-// tells rust theres a module named tokenizer in the same directory as this file (lib.rs)
 pub mod tokenizer;

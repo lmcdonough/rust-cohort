@@ -19,55 +19,70 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     while let Some(&ch) = chars.peek() {
         match ch {
             '{' => {
-                // push the left opening brace
                 tokens.push(Token::LeftBrace);
-                chars.next(); // consume the character
+                chars.next();
             }
-            // push the right closing brace
             '}' => {
                 tokens.push(Token::RightBrace);
-                chars.next(); // consume the character
+                chars.next();
             }
-            // string parsing: collect chars between quotes
             '"' => {
-                chars.next(); // consume the opening quote
+                chars.next();
                 let mut s = String::new();
-                // keep collecting characters until closing quote
                 while let Some(&ch) = chars.peek() {
                     if ch == '"' {
-                        chars.next(); // consume closing quote
-                        break; // stop collecting
+                        chars.next();
+                        break;
                     }
-                    s.push(ch); // add character to our string
-                    chars.next(); // advance to the next character
+                    s.push(ch);
+                    chars.next();
                 }
-                // push the completed string token after the loop
                 tokens.push(Token::String(s));
             }
-            // number parsing
             '0'..='9' | '-' => {
                 let mut num_str = String::new();
                 while let Some(&ch) = chars.peek() {
-                    // only collect characters that are part of a number
                     if ch.is_numeric() || ch == '.' || ch == '-' {
-                        num_str.push(ch); // add character to num_string
-                        chars.next(); // consume the character
+                        num_str.push(ch);
+                        chars.next();
                     } else {
-                        break; // hit a nun number, stop
+                        break;
                     }
                 }
-                // parse string to f64, unwrap for now (error handling in week 2)
                 let parsed = num_str.parse::<f64>().unwrap();
-                // push the completed number string token after the loop
                 tokens.push(Token::Number(parsed));
             }
-            // catch all, must be last arm
-            _ => {
-                chars.next(); // still must advance or infinite loop.
+            ch if ch.is_alphabetic() => {
+                let mut word = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphabetic() {
+                        word.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                    match word.as_str() {
+                        "true" => tokens.push(Token::Boolean(true)),
+                        "false" => tokens.push(Token::Boolean(false)),
+                        "null" => tokens.push(Token::Null),
+                        _ => {}
+                    }
+                }
             }
-        } // closes match statement
-    } // closes while statement
-    tokens // Implicit Return statement (do not use return or add a semicolon)
+            ':' => {
+                tokens.push(Token::Colon);
+                chars.next();
+            }
+            ',' => {
+                tokens.push(Token::Comma);
+                chars.next();
+            }
+            _ => {
+                chars.next();
+            }
+        }
+    }
+    tokens
 }
 
 #[cfg(test)]
@@ -126,7 +141,6 @@ mod tests {
     #[test]
     fn test_multiple_values() {
         let tokens = tokenize(r#"{"age": 30, "active": true}"#);
-        // Verify we have the right tokens
         assert!(tokens.contains(&Token::String("age".to_string())));
         assert!(tokens.contains(&Token::Number(30.0)));
         assert!(tokens.contains(&Token::Comma));
@@ -134,10 +148,8 @@ mod tests {
         assert!(tokens.contains(&Token::Boolean(true)));
     }
 
-    // String boundary tests - verify inner vs outer quote handling
     #[test]
     fn test_empty_string() {
-        // Outer boundary: adjacent quotes with no inner content
         let tokens = tokenize(r#""""#);
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::String("".to_string()));
@@ -145,7 +157,6 @@ mod tests {
 
     #[test]
     fn test_string_containing_json_special_chars() {
-        // Inner handling: JSON delimiters inside strings don't break tokenization
         let tokens = tokenize(r#""{key: value}""#);
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::String("{key: value}".to_string()));
@@ -153,7 +164,6 @@ mod tests {
 
     #[test]
     fn test_string_with_keyword_like_content() {
-        // Inner handling: "true", "false", "null" inside strings stay as string content
         let tokens = tokenize(r#""not true or false""#);
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::String("not true or false".to_string()));
@@ -161,13 +171,11 @@ mod tests {
 
     #[test]
     fn test_string_with_number_like_content() {
-        // Inner handling: numeric content inside strings doesn't become Number tokens
         let tokens = tokenize(r#""phone: 555-1234""#);
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0], Token::String("phone: 555-1234".to_string()));
     }
 
-    // Number parsing tests
     #[test]
     fn test_negative_number() {
         let tokens = tokenize("-42");
@@ -184,9 +192,7 @@ mod tests {
 
     #[test]
     fn test_leading_decimal_not_a_number() {
-        // .5 is invalid JSON - numbers must have leading digit (0.5 is valid)
         let tokens = tokenize(".5");
-        // Should NOT be interpreted as 0.5
         assert!(!tokens.contains(&Token::Number(0.5)));
     }
 }
