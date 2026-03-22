@@ -1,4 +1,4 @@
-use rust_json_parser::tokenizer::tokenize;
+use rust_json_parser::tokenize;
 
 fn main() {
     let json = r#"{"name": "Alice", "age": 30}"#;
