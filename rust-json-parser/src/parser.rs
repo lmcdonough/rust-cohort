@@ -5,14 +5,8 @@ use crate::value::JsonValue;
 type Result<T> = std::result::Result<T, JsonError>;
 
 pub fn parse_json(input: &str) -> Result<JsonValue> {
-    // tokenize the input
-    // ? means: if tokenize returns Err, immediately return that Err from parse_json
-    // no mut needed: we're not modifying the vector, just reading from it
     let tokens = tokenize(input)?;
 
-    // check for empty input
-    // tokenize returns a Vec, not an iterator so use .is_empty() not .peek()
-    // .peek() is for iterators (like chars.peek() in the tokenizer function)
     if tokens.is_empty() {
         return Err(JsonError::UnexpectedEndOfInput {
             expected: "JSON value".to_string(),
@@ -20,23 +14,11 @@ pub fn parse_json(input: &str) -> Result<JsonValue> {
         });
     }
 
-    // Match on the first token and convert to JsonValue
-    // &tokens[0] - we borrow the first element (& means "look at it, dont take it")
     match &tokens[0] {
-        // Destructure: Token::String(s) pulls the string DATA out of the variant
-        // Python analogy: like unpacking - s = token.value
         Token::String(s) => Ok(JsonValue::String(s.clone())),
-
-        // *n dereferences: n is &f64, *n copies the actual number
         Token::Number(n) => Ok(JsonValue::Number(*n)),
-
-        // *b dereferences: same pattern, copies the bool
         Token::Boolean(b) => Ok(JsonValue::Boolean(*b)),
-
-        // Null carries no data, so no destructuring is needed
         Token::Null => Ok(JsonValue::Null),
-
-        // Anything else is an error - format the token for the error message
         _ => Err(JsonError::UnexpectedToken {
             expected: "primitive JSON value".to_string(),
             found: format!("{:?}", tokens[0]),

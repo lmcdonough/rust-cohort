@@ -1,4 +1,3 @@
-// Week 2: Custom error type for JSON parsing
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +20,6 @@ pub enum JsonError {
 impl fmt::Display for JsonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // pattern match each variant, extract fields, write! a message
             JsonError::UnexpectedToken {
                 expected,
                 found,

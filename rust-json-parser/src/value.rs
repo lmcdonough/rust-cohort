@@ -7,14 +7,10 @@ pub enum JsonValue {
 }
 
 impl JsonValue {
-    // Check if this value is the Null variant
-    // matches! is a shortcut macro that returns true if the pattern matches, false otherwise
     pub fn is_null(&self) -> bool {
         matches!(self, JsonValue::Null)
     }
 
-    // Try to get the string inside. Returns None if this isn't a String variant
-    // s.as_str() converts owned String to borrowed &str (more efficient, no copying)
     pub fn as_str(&self) -> Option<&str> {
         match self {
             JsonValue::String(s) => Some(s.as_str()),
@@ -22,8 +18,6 @@ impl JsonValue {
         }
     }
 
-    // Try to get the number inside. Returns None if this isn't a Number variant
-    // *n dereferences: n is a reference (&f64), *n copies the actual number out
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             JsonValue::Number(n) => Some(*n),
@@ -31,8 +25,6 @@ impl JsonValue {
         }
     }
 
-    // Try to get the boolean inside. Returns None if this isn't a Boolean variant
-    // *b dereferences: same as *n above, copies the bool value out of the reference
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             JsonValue::Boolean(b) => Some(*b),
@@ -41,7 +33,6 @@ impl JsonValue {
     }
 }
 
-// Copy these tests as-is:
 #[cfg(test)]
 mod tests {
     use super::*;
