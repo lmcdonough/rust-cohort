@@ -6,11 +6,16 @@ Exercises, assignments, and projects from a cohort-based Rust programming course
 
 ### rust-json-parser
 
-A JSON tokenizer that converts raw JSON strings into a stream of tokens. Supports:
+A JSON parser built incrementally over multiple weeks. Currently supports tokenizing and parsing primitive JSON values.
 
-- Structural tokens: `{}`, `[]`, `,`, `:`
-- Strings, numbers (integers and decimals), booleans, and null
-- 15 unit tests covering edge cases (empty strings, keyword-like content in strings, invalid leading decimals)
+**Modules:**
+
+- **tokenizer** — Converts raw JSON strings into a stream of tokens with position tracking and error reporting
+- **parser** — Parses token streams into `JsonValue` types (strings, numbers, booleans, null)
+- **error** — Structured error types (`JsonError`) with position tracking for diagnostics
+- **value** — `JsonValue` enum representing parsed JSON data with accessor methods
+
+**Test coverage:** 30 tests across all modules covering tokenization, parsing, error handling, and integration.
 
 ## Getting Started
 

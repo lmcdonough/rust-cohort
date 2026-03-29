@@ -22,3 +22,6 @@ Cargo.lock
 
 # Serena
 .serena/
+
+# Claude Code
+.claude/
