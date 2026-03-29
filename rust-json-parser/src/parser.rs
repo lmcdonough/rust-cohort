@@ -30,38 +30,43 @@ pub fn parse_json(input: &str) -> Result<JsonValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::error::JsonError;
+    type Result<T> = std::result::Result<T, JsonError>;
     #[test]
-    fn test_parse_string() {
-        let result = parse_json(r#""hello world""#).unwrap();
+    fn test_parse_string() -> Result<()> {
+        let result = parse_json(r#""hello world""#)?;
         assert_eq!(result, JsonValue::String("hello world".to_string()));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_number() {
-        let result = parse_json("42.5").unwrap();
+    fn test_parse_number() -> Result<()> {
+        let result = parse_json("42.5")?;
         assert_eq!(result, JsonValue::Number(42.5));
 
-        let result = parse_json("0").unwrap();
+        let result = parse_json("0")?;
         assert_eq!(result, JsonValue::Number(0.0));
 
-        let result = parse_json("-10").unwrap();
+        let result = parse_json("-10")?;
         assert_eq!(result, JsonValue::Number(-10.0));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_boolean() {
-        let result = parse_json("true").unwrap();
+    fn test_parse_boolean() -> Result<()> {
+        let result = parse_json("true")?;
         assert_eq!(result, JsonValue::Boolean(true));
 
-        let result = parse_json("false").unwrap();
+        let result = parse_json("false")?;
         assert_eq!(result, JsonValue::Boolean(false));
+        Ok(())
     }
 
     #[test]
-    fn test_parse_null() {
-        let result = parse_json("null").unwrap();
+    fn test_parse_null() -> Result<()> {
+        let result = parse_json("null")?;
         assert_eq!(result, JsonValue::Null);
+        Ok(())
     }
 
     #[test]
@@ -84,12 +89,13 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_with_whitespace() {
-        let result = parse_json(" 42 ").unwrap();
+    fn test_parse_with_whitespace() -> Result<()> {
+        let result = parse_json(" 42 ")?;
         assert_eq!(result, JsonValue::Number(42.0));
 
-        let result = parse_json("\n\ttrue\n").unwrap();
+        let result = parse_json("\n\ttrue\n")?;
         assert_eq!(result, JsonValue::Boolean(true));
+        Ok(())
     }
 
     #[test]
