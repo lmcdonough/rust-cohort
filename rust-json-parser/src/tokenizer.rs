@@ -1,3 +1,6 @@
+use std::iter::Peekable;
+use std::str::Chars;
+
 use crate::error::JsonError;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +15,77 @@ pub enum Token {
     Number(f64),
     Boolean(bool),
     Null,
+}
+
+fn tokenize_string(chars: &mut Peekable<Chars>, position: &mut usize) -> Result<Token, JsonError> {
+    let start = *position;
+    chars.next();
+    *position += 1;
+    let mut s = String::new();
+    loop {
+        match chars.next() {
+            Some('"') => {
+                *position += 1;
+                break;
+            }
+            Some(ch) => {
+                s.push(ch);
+                *position += ch.len_utf8();
+            }
+            None => {
+                return Err(JsonError::UnexpectedEndOfInput {
+                    expected: "closing quote".to_string(),
+                    position: start,
+                });
+            }
+        }
+    }
+    Ok(Token::String(s))
+}
+
+fn tokenize_number(chars: &mut Peekable<Chars>, position: &mut usize) -> Result<Token, JsonError> {
+    let start = *position;
+    let mut num_str = String::new();
+    while let Some(&ch) = chars.peek() {
+        if ch.is_ascii_digit() || ch == '.' || ch == '-' {
+            num_str.push(ch);
+            chars.next();
+            *position += 1;
+        } else {
+            break;
+        }
+    }
+    let parsed = num_str
+        .parse::<f64>()
+        .map_err(|_| JsonError::InvalidNumber {
+            value: num_str.clone(),
+            position: start,
+        })?;
+    Ok(Token::Number(parsed))
+}
+
+fn tokenize_keyword(chars: &mut Peekable<Chars>, position: &mut usize) -> Result<Token, JsonError> {
+    let start = *position;
+    let mut word = String::new();
+    while let Some(&ch) = chars.peek() {
+        if ch.is_alphabetic() {
+            word.push(ch);
+            chars.next();
+            *position += 1;
+        } else {
+            break;
+        }
+    }
+    match word.as_str() {
+        "true" => Ok(Token::Boolean(true)),
+        "false" => Ok(Token::Boolean(false)),
+        "null" => Ok(Token::Null),
+        _ => Err(JsonError::UnexpectedToken {
+            expected: "true, false, or null".to_string(),
+            found: word,
+            position: start,
+        }),
+    }
 }
 
 pub fn tokenize(input: &str) -> Result<Vec<Token>, JsonError> {
@@ -42,73 +116,13 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, JsonError> {
                 position += 1;
             }
             '"' => {
-                let start = position;
-                chars.next();
-                position += 1;
-                let mut s = String::new();
-                loop {
-                    match chars.next() {
-                        Some('"') => {
-                            position += 1;
-                            break;
-                        }
-                        Some(ch) => {
-                            s.push(ch);
-                            position += ch.len_utf8();
-                        }
-                        None => {
-                            return Err(crate::error::JsonError::UnexpectedEndOfInput {
-                                expected: "closing quote".to_string(),
-                                position: start,
-                            });
-                        }
-                    }
-                }
-                tokens.push(Token::String(s));
+                tokens.push(tokenize_string(&mut chars, &mut position)?);
             }
             '0'..='9' | '-' => {
-                let start = position;
-                let mut num_str = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_ascii_digit() || ch == '.' || ch == '-' {
-                        num_str.push(ch);
-                        chars.next();
-                        position += 1;
-                    } else {
-                        break;
-                    }
-                }
-                let parsed = num_str
-                    .parse::<f64>()
-                    .map_err(|_| JsonError::InvalidNumber {
-                        value: num_str.clone(),
-                        position: start,
-                    })?;
-                tokens.push(Token::Number(parsed));
+                tokens.push(tokenize_number(&mut chars, &mut position)?);
             }
             ch if ch.is_alphabetic() => {
-                let mut word = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch.is_alphabetic() {
-                        word.push(ch);
-                        chars.next();
-                        position += 1;
-                    } else {
-                        break;
-                    }
-                }
-                match word.as_str() {
-                    "true" => tokens.push(Token::Boolean(true)),
-                    "false" => tokens.push(Token::Boolean(false)),
-                    "null" => tokens.push(Token::Null),
-                    _ => {
-                        return Err(crate::error::JsonError::UnexpectedToken {
-                            expected: "true, false, or null".to_string(),
-                            found: word,
-                            position,
-                        });
-                    }
-                }
+                tokens.push(tokenize_keyword(&mut chars, &mut position)?);
             }
             ':' => {
                 tokens.push(Token::Colon);
@@ -261,5 +275,20 @@ mod tests {
     fn test_leading_decimal_not_a_number() {
         let result = tokenize(".5");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_keyword_error_position_points_to_start() {
+        let input = "   xyz";
+        let result = tokenize(input);
+        assert!(result.is_err());
+        if let Err(JsonError::UnexpectedToken { position, .. }) = result {
+            assert_eq!(
+                position, 3,
+                "error position should point to the start of 'xyz' (index 3), not past it"
+            );
+        } else {
+            panic!("expected UnexpectedToken error");
+        }
     }
 }
