@@ -1,8 +1,75 @@
 use crate::error::JsonError;
-use crate::tokenizer::{Token, tokenize};
+use crate::tokenizer::{Token, Tokenizer, tokenize};
 use crate::value::JsonValue;
 
 type Result<T> = std::result::Result<T, JsonError>;
+
+// JsonParser Struct
+pub struct JsonParser {
+    tokens: Vec<Token>,
+    position: usize,
+}
+
+// JsonParser implementation
+impl JsonParser {
+    pub fn new(input: &str) -> Result<Self> {
+        let mut tokenizer = Tokenizer::new(input);
+        let tokens = tokenizer.tokenize()?;
+
+        Ok(JsonParser {
+            tokens,
+            position: 0,
+        })
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.position >= self.tokens.len()
+    }
+
+    fn advance(&mut self) -> Option<Token> {
+        if self.is_at_end() {
+            None
+        } else {
+            let token = self.tokens[self.position].clone();
+            self.position += 1;
+            Some(token)
+        }
+    }
+
+    pub fn parse(&mut self) -> Result<JsonValue> {
+        if self.is_at_end() {
+            return Err(JsonError::UnexpectedEndOfInput {
+                expected: "a JSON value".to_string(),
+                position: 0,
+            });
+        }
+
+        // FIX 1: This match block was OUTSIDE the parse() function.
+        //        It must be inside parse() — it's the return value.
+        match self.advance() {
+            Some(Token::String(s)) => Ok(JsonValue::String(s)),
+            Some(Token::Number(n)) => Ok(JsonValue::Number(n)),
+            Some(Token::Boolean(b)) => Ok(JsonValue::Boolean(b)),
+            Some(Token::Null) => Ok(JsonValue::Null),
+            // FIX 2: Missing closing paren — was `Some(token =>`
+            //        Correct syntax: `Some(token) =>`
+            Some(token) => Err(JsonError::UnexpectedToken {
+                expected: "a JSON value".to_string(),
+                found: format!("{:?}", token),
+                // FIX 3: Typo — was `positino`, corrected to `position`
+                position: self.position - 1,
+            }),
+            // FIX 4: Was `None = Err(...)` — missing `>` in the arrow
+            //        Correct syntax: `None => Err(...)`
+            // FIX 5: Was `UnexpectedEndOFInput` — capital "OF" typo
+            //        Correct: `UnexpectedEndOfInput`
+            None => Err(JsonError::UnexpectedEndOfInput {
+                expected: "a JSON value".to_string(),
+                position: self.position,
+            }),
+        }
+    } // FIX 6: parse() now properly closes here, after the match block
+}
 
 pub fn parse_json(input: &str) -> Result<JsonValue> {
     let tokens = tokenize(input)?;
@@ -111,5 +178,25 @@ mod tests {
             Err(JsonError::UnexpectedToken { .. }) => {}
             _ => panic!("Expected UnexpectedToken error"),
         }
+    }
+    #[test]
+    fn test_parse_string_with_newline() {
+        let mut parser = JsonParser::new(r#""hello\nworld""#).unwrap();
+        let result = parser.parse().unwrap();
+        assert_eq!(result, JsonValue::String("hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn test_parse_string_with_unicode() {
+        let mut parser = JsonParser::new(r#""\u0048\u0069""#).unwrap();
+        let result = parser.parse().unwrap();
+        assert_eq!(result, JsonValue::String("Hi".to_string()));
+    }
+
+    #[test]
+    fn test_parse_complex_escapes() {
+        let mut parser = JsonParser::new(r#""tab\there\nnewline""#).unwrap();
+        let result = parser.parse().unwrap();
+        assert_eq!(result, JsonValue::String("tab\there\nnewline".to_string()));
     }
 }

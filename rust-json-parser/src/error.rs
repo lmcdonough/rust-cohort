@@ -15,6 +15,14 @@ pub enum JsonError {
         value: String,
         position: usize,
     },
+    InvalidEscape {
+        char: char,
+        position: usize,
+    },
+    InvalidUnicode {
+        sequence: String,
+        position: usize,
+    },
 }
 
 impl fmt::Display for JsonError {
@@ -41,6 +49,14 @@ impl fmt::Display for JsonError {
             JsonError::InvalidNumber { value, position } => {
                 write!(f, "Invalid number '{}' at position {}", value, position)
             }
+            JsonError::InvalidEscape { char, position } => {
+                write!(f, "Invalid escape '\\{}' at position {}", char, position)
+            }
+            JsonError::InvalidUnicode { sequence, position } => write!(
+                f,
+                "Invalid unicode escape '{}' at position {}",
+                sequence, position
+            ),
         }
     }
 }
