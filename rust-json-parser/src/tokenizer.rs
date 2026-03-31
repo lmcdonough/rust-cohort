@@ -74,6 +74,35 @@ impl Tokenizer {
                         Some('r') => s.push('\r'),
                         Some('t') => s.push('\t'),
                         // Step 4 will add Some('u') here for unicode
+                        Some('u') => {
+                            let mut hex_str = String::new();
+                            for _ in 0..4 {
+                                match self.advance() {
+                                    Some(c) if c.is_ascii_hexdigit() => {
+                                        hex_str.push(c);
+                                    }
+                                    _ => {
+                                        return Err(JsonError::InvalidUnicode {
+                                            sequence: hex_str,
+                                            position: self.position,
+                                        });
+                                    }
+                                }
+                            }
+                            let code_point = u32::from_str_radix(&hex_str, 16).map_err(|_| {
+                                JsonError::InvalidUnicode {
+                                    sequence: hex_str.clone(),
+                                    position: self.position,
+                                }
+                            })?;
+                            let ch =
+                                char::from_u32(code_point).ok_or(JsonError::InvalidUnicode {
+                                    sequence: hex_str,
+                                    position: self.position,
+                                })?;
+                            s.push(ch);
+                            continue; // skip back to loop top
+                        }
                         Some(ch) => {
                             return Err(JsonError::InvalidEscape {
                                 char: ch,
