@@ -1,5 +1,5 @@
 use crate::error::JsonError;
-use crate::tokenizer::{Token, Tokenizer, tokenize};
+use crate::tokenizer::{Token, Tokenizer};
 use crate::value::JsonValue;
 
 type Result<T> = std::result::Result<T, JsonError>;
@@ -36,62 +36,125 @@ impl JsonParser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<JsonValue> {
+    // Peek at current token and check if it matches expected variant
+    // Uses dicreiminant comparison - matches the variant shape, ignores inner data
+    // Returns falso if at end. Does Not advance position
+    fn check(&self, expected: &Token) -> bool {
+        self.tokens
+            .get(self.position)
+            .map(|t| std::mem::discriminant(t) == std::mem::discriminant(expected))
+            .unwrap_or(false)
+    }
+
+    // Looks at the current token and routes to the right parser
+    // Primitives -> handle directly
+    // [ -> call parse_array() (recursive dispatch point)
+    fn parse_value(&mut self) -> Result<JsonValue> {
         if self.is_at_end() {
             return Err(JsonError::UnexpectedEndOfInput {
-                expected: "a JSON value".to_string(),
-                position: 0,
+                expected: "JSON value".to_string(),
+                position: self.position,
             });
         }
 
-        // FIX 1: This match block was OUTSIDE the parse() function.
-        //        It must be inside parse() — it's the return value.
-        match self.advance() {
-            Some(Token::String(s)) => Ok(JsonValue::String(s)),
-            Some(Token::Number(n)) => Ok(JsonValue::Number(n)),
-            Some(Token::Boolean(b)) => Ok(JsonValue::Boolean(b)),
-            Some(Token::Null) => Ok(JsonValue::Null),
-            // FIX 2: Missing closing paren — was `Some(token =>`
-            //        Correct syntax: `Some(token) =>`
-            Some(token) => Err(JsonError::UnexpectedToken {
-                expected: "a JSON value".to_string(),
+        // Clone current token to decide what to do
+        // We clone so we can call &mut self methods (advance, parse_array)
+        // without a borrow conflict
+        match self.tokens[self.position].clone() {
+            // THE RECURSION ENTRY POINT
+            // parse_array will call parse_value for each element,
+            // which might hit this arm again for nested arrays
+            Token::LeftBracket => self.parse_array(),
+
+            // Primitives: data already captured by the clone - just advance and wrap
+            Token::String(s) => {
+                self.advance();
+                Ok(JsonValue::String(s))
+            }
+            Token::Number(n) => {
+                self.advance();
+                Ok(JsonValue::Number(n))
+            }
+            Token::Boolean(b) => {
+                self.advance();
+                Ok(JsonValue::Boolean(b))
+            }
+            Token::Null => {
+                self.advance();
+                Ok(JsonValue::Null)
+            }
+            token => Err(JsonError::UnexpectedToken {
+                expected: "JSON value".to_string(),
                 found: format!("{:?}", token),
-                // FIX 3: Typo — was `positino`, corrected to `position`
-                position: self.position - 1,
-            }),
-            // FIX 4: Was `None = Err(...)` — missing `>` in the arrow
-            //        Correct syntax: `None => Err(...)`
-            // FIX 5: Was `UnexpectedEndOFInput` — capital "OF" typo
-            //        Correct: `UnexpectedEndOfInput`
-            None => Err(JsonError::UnexpectedEndOfInput {
-                expected: "a JSON value".to_string(),
                 position: self.position,
             }),
         }
-    } // FIX 6: parse() now properly closes here, after the match block
+    }
+
+    // Parses a JSON array: [ value, value, ...]
+    // Called by parse_value() when it sees LeftBracket
+    // Calls parse_value() for each element -> mutual recursion
+    fn parse_array(&mut self) -> Result<JsonValue> {
+        self.advance(); // consume opening [
+        let mut elements: Vec<JsonValue> = Vec::new();
+
+        // Empty array [] - nothing to collect
+        if self.check(&Token::RightBracket) {
+            self.advance(); // consume ]
+            return Ok(JsonValue::Array(elements));
+        }
+
+        // Main collection loop
+        loop {
+            // Parse next element - THIS is the recursive call
+            // If the element is itself an array, parse_value() will
+            // call parse_array() again, creating a new stack frame.
+            let value = self.parse_value()?;
+            elements.push(value); // Vec takes ownership of the parsed value
+
+            if self.check(&Token::Comma) {
+                self.advance(); // consume
+
+                // Trailing comma guard: [1,2,] is invalid JSON
+                if self.check(&Token::RightBracket) {
+                    return Err(JsonError::UnexpectedToken {
+                        expected: "JSON value".to_string(),
+                        found: "]".to_string(),
+                        position: self.position,
+                    });
+                }
+                // valid comma - loop back and parse the next element
+            } else if self.check(&Token::RightBracket) {
+                self.advance(); // consume ]
+                break; // array complete
+            } else if self.is_at_end() {
+                // Ran out of tokens before seeing ] - unclosed array
+                return Err(JsonError::UnexpectedEndOfInput {
+                    expected: "] or ,".to_string(),
+                    position: self.position,
+                });
+            } else {
+                // Something unexpected - not a comma or ]
+                return Err(JsonError::UnexpectedToken {
+                    expected: "] or ,".to_string(),
+                    found: format!("{:?}", self.tokens[self.position]),
+                    position: self.position,
+                });
+            }
+        }
+        Ok(JsonValue::Array(elements))
+    }
+
+    pub fn parse(&mut self) -> Result<JsonValue> {
+        // parse_value() now does all the work, including array dispatch
+        self.parse_value()
+    }
 }
 
 pub fn parse_json(input: &str) -> Result<JsonValue> {
-    let tokens = tokenize(input)?;
-
-    if tokens.is_empty() {
-        return Err(JsonError::UnexpectedEndOfInput {
-            expected: "JSON value".to_string(),
-            position: 0,
-        });
-    }
-
-    match &tokens[0] {
-        Token::String(s) => Ok(JsonValue::String(s.clone())),
-        Token::Number(n) => Ok(JsonValue::Number(*n)),
-        Token::Boolean(b) => Ok(JsonValue::Boolean(*b)),
-        Token::Null => Ok(JsonValue::Null),
-        _ => Err(JsonError::UnexpectedToken {
-            expected: "primitive JSON value".to_string(),
-            found: format!("{:?}", tokens[0]),
-            position: 0,
-        }),
-    }
+    // JsonParser::new tokenizes; parser.parse() recursively handles everything
+    let mut parser = JsonParser::new(input)?;
+    parser.parse()
 }
 
 #[cfg(test)]
@@ -198,5 +261,39 @@ mod tests {
         let mut parser = JsonParser::new(r#""tab\there\nnewline""#).unwrap();
         let result = parser.parse().unwrap();
         assert_eq!(result, JsonValue::String("tab\there\nnewline".to_string()));
+    }
+    #[cfg(test)]
+    mod array_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_empty_array() {
+            let value = parse_json("[]").unwrap();
+            assert_eq!(value, JsonValue::Array(vec![]));
+        }
+
+        #[test]
+        fn test_parse_array_single() {
+            let value = parse_json("[1]").unwrap();
+            assert_eq!(value, JsonValue::Array(vec![JsonValue::Number(1.0)]));
+        }
+
+        #[test]
+        fn test_parse_array_multiple() {
+            let value = parse_json("[1, 2, 3]").unwrap();
+            let arr = value.as_array().unwrap();
+            assert_eq!(arr.len(), 3);
+        }
+
+        #[test]
+        fn test_parse_array_mixed_types() {
+            let value = parse_json(r#"[1, "two", true, null]"#).unwrap();
+            let arr = value.as_array().unwrap();
+            assert_eq!(arr.len(), 4);
+            assert_eq!(arr[0], JsonValue::Number(1.0));
+            assert_eq!(arr[1], JsonValue::String("two".to_string()));
+            assert_eq!(arr[2], JsonValue::Boolean(true));
+            assert_eq!(arr[3], JsonValue::Null);
+        }
     }
 }
