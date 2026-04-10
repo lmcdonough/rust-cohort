@@ -1,16 +1,16 @@
+use std::collections::HashMap;
+
 use crate::error::JsonError;
 use crate::tokenizer::{Token, Tokenizer};
 use crate::value::JsonValue;
 
 type Result<T> = std::result::Result<T, JsonError>;
 
-// JsonParser Struct
 pub struct JsonParser {
     tokens: Vec<Token>,
     position: usize,
 }
 
-// JsonParser implementation
 impl JsonParser {
     pub fn new(input: &str) -> Result<Self> {
         let mut tokenizer = Tokenizer::new(input);
@@ -36,9 +36,6 @@ impl JsonParser {
         }
     }
 
-    // Peek at current token and check if it matches expected variant
-    // Uses dicreiminant comparison - matches the variant shape, ignores inner data
-    // Returns falso if at end. Does Not advance position
     fn check(&self, expected: &Token) -> bool {
         self.tokens
             .get(self.position)
@@ -46,9 +43,6 @@ impl JsonParser {
             .unwrap_or(false)
     }
 
-    // Looks at the current token and routes to the right parser
-    // Primitives -> handle directly
-    // [ -> call parse_array() (recursive dispatch point)
     fn parse_value(&mut self) -> Result<JsonValue> {
         if self.is_at_end() {
             return Err(JsonError::UnexpectedEndOfInput {
@@ -57,16 +51,9 @@ impl JsonParser {
             });
         }
 
-        // Clone current token to decide what to do
-        // We clone so we can call &mut self methods (advance, parse_array)
-        // without a borrow conflict
         match self.tokens[self.position].clone() {
-            // THE RECURSION ENTRY POINT
-            // parse_array will call parse_value for each element,
-            // which might hit this arm again for nested arrays
             Token::LeftBracket => self.parse_array(),
-
-            // Primitives: data already captured by the clone - just advance and wrap
+            Token::LeftBrace => self.parse_object(),
             Token::String(s) => {
                 self.advance();
                 Ok(JsonValue::String(s))
@@ -91,31 +78,22 @@ impl JsonParser {
         }
     }
 
-    // Parses a JSON array: [ value, value, ...]
-    // Called by parse_value() when it sees LeftBracket
-    // Calls parse_value() for each element -> mutual recursion
     fn parse_array(&mut self) -> Result<JsonValue> {
-        self.advance(); // consume opening [
+        self.advance();
         let mut elements: Vec<JsonValue> = Vec::new();
 
-        // Empty array [] - nothing to collect
         if self.check(&Token::RightBracket) {
-            self.advance(); // consume ]
+            self.advance();
             return Ok(JsonValue::Array(elements));
         }
 
-        // Main collection loop
         loop {
-            // Parse next element - THIS is the recursive call
-            // If the element is itself an array, parse_value() will
-            // call parse_array() again, creating a new stack frame.
             let value = self.parse_value()?;
-            elements.push(value); // Vec takes ownership of the parsed value
+            elements.push(value);
 
             if self.check(&Token::Comma) {
-                self.advance(); // consume
+                self.advance();
 
-                // Trailing comma guard: [1,2,] is invalid JSON
                 if self.check(&Token::RightBracket) {
                     return Err(JsonError::UnexpectedToken {
                         expected: "JSON value".to_string(),
@@ -123,18 +101,15 @@ impl JsonParser {
                         position: self.position,
                     });
                 }
-                // valid comma - loop back and parse the next element
             } else if self.check(&Token::RightBracket) {
-                self.advance(); // consume ]
-                break; // array complete
+                self.advance();
+                break;
             } else if self.is_at_end() {
-                // Ran out of tokens before seeing ] - unclosed array
                 return Err(JsonError::UnexpectedEndOfInput {
                     expected: "] or ,".to_string(),
                     position: self.position,
                 });
             } else {
-                // Something unexpected - not a comma or ]
                 return Err(JsonError::UnexpectedToken {
                     expected: "] or ,".to_string(),
                     found: format!("{:?}", self.tokens[self.position]),
@@ -145,14 +120,88 @@ impl JsonParser {
         Ok(JsonValue::Array(elements))
     }
 
+    fn parse_object(&mut self) -> Result<JsonValue> {
+        self.advance();
+        let mut map = HashMap::new();
+
+        if self.check(&Token::RightBrace) {
+            self.advance();
+            return Ok(JsonValue::Object(map));
+        }
+
+        loop {
+            let key = match self.advance() {
+                Some(Token::String(s)) => s,
+                Some(token) => {
+                    return Err(JsonError::UnexpectedToken {
+                        expected: "string key".to_string(),
+                        found: format!("{:?}", token),
+                        position: self.position - 1,
+                    });
+                }
+                None => {
+                    return Err(JsonError::UnexpectedEndOfInput {
+                        expected: "string key".to_string(),
+                        position: self.position,
+                    });
+                }
+            };
+
+            match self.advance() {
+                Some(Token::Colon) => {}
+                Some(token) => {
+                    return Err(JsonError::UnexpectedToken {
+                        expected: ":".to_string(),
+                        found: format!("{:?}", token),
+                        position: self.position - 1,
+                    });
+                }
+                None => {
+                    return Err(JsonError::UnexpectedEndOfInput {
+                        expected: ":".to_string(),
+                        position: self.position,
+                    });
+                }
+            }
+
+            let value = self.parse_value()?;
+            map.insert(key, value);
+
+            match self.advance() {
+                Some(Token::RightBrace) => break,
+                Some(Token::Comma) => {
+                    if self.check(&Token::RightBrace) {
+                        return Err(JsonError::UnexpectedToken {
+                            expected: "string key".to_string(),
+                            found: "}".to_string(),
+                            position: self.position,
+                        });
+                    }
+                }
+                Some(token) => {
+                    return Err(JsonError::UnexpectedToken {
+                        expected: "} or ,".to_string(),
+                        found: format!("{:?}", token),
+                        position: self.position - 1,
+                    });
+                }
+                None => {
+                    return Err(JsonError::UnexpectedEndOfInput {
+                        expected: "} or ,".to_string(),
+                        position: self.position,
+                    });
+                }
+            }
+        }
+        Ok(JsonValue::Object(map))
+    }
+
     pub fn parse(&mut self) -> Result<JsonValue> {
-        // parse_value() now does all the work, including array dispatch
         self.parse_value()
     }
 }
 
 pub fn parse_json(input: &str) -> Result<JsonValue> {
-    // JsonParser::new tokenizes; parser.parse() recursively handles everything
     let mut parser = JsonParser::new(input)?;
     parser.parse()
 }
@@ -262,6 +311,7 @@ mod tests {
         let result = parser.parse().unwrap();
         assert_eq!(result, JsonValue::String("tab\there\nnewline".to_string()));
     }
+
     #[cfg(test)]
     mod array_tests {
         use super::*;
@@ -294,6 +344,131 @@ mod tests {
             assert_eq!(arr[1], JsonValue::String("two".to_string()));
             assert_eq!(arr[2], JsonValue::Boolean(true));
             assert_eq!(arr[3], JsonValue::Null);
+        }
+    }
+
+    #[cfg(test)]
+    mod object_tests {
+        use super::*;
+        use std::collections::HashMap;
+
+        #[test]
+        fn test_parse_empty_object() {
+            let value = parse_json("{}").unwrap();
+            assert_eq!(value, JsonValue::Object(HashMap::new()));
+        }
+
+        #[test]
+        fn test_parse_object_single_key() {
+            let value = parse_json(r#"{"key": "value"}"#).unwrap();
+            let mut expected = HashMap::new();
+            expected.insert("key".to_string(), JsonValue::String("value".to_string()));
+            assert_eq!(value, JsonValue::Object(expected));
+        }
+
+        #[test]
+        fn test_parse_object_multiple_keys() {
+            let value = parse_json(r#"{"name": "Alice", "age": 30}"#).unwrap();
+            if let JsonValue::Object(obj) = value {
+                assert_eq!(
+                    obj.get("name"),
+                    Some(&JsonValue::String("Alice".to_string()))
+                );
+                assert_eq!(obj.get("age"), Some(&JsonValue::Number(30.0)));
+            } else {
+                panic!("Expected object");
+            }
+        }
+
+        #[test]
+        fn test_parse_nested_object() {
+            let value = parse_json(r#"{"outer": {"inner": 1}}"#).unwrap();
+            if let JsonValue::Object(outer) = value {
+                if let Some(JsonValue::Object(inner)) = outer.get("outer") {
+                    assert_eq!(inner.get("inner"), Some(&JsonValue::Number(1.0)));
+                } else {
+                    panic!("Expected nested object");
+                }
+            } else {
+                panic!("Expected object");
+            }
+        }
+
+        #[test]
+        fn test_parse_array_in_object() {
+            let value = parse_json(r#"{"items": [1, 2, 3]}"#).unwrap();
+            if let JsonValue::Object(obj) = value {
+                if let Some(JsonValue::Array(arr)) = obj.get("items") {
+                    assert_eq!(arr.len(), 3);
+                } else {
+                    panic!("Expected array");
+                }
+            } else {
+                panic!("Expected object");
+            }
+        }
+
+        #[test]
+        fn test_parse_object_in_array() {
+            let value = parse_json(r#"[{"a": 1}, {"b": 2}]"#).unwrap();
+            if let JsonValue::Array(arr) = value {
+                assert_eq!(arr.len(), 2);
+            } else {
+                panic!("Expected array");
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod error_tests {
+        use super::*;
+
+        #[test]
+        fn test_error_unclosed_array() {
+            let result = parse_json("[1, 2");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_unclosed_object() {
+            let result = parse_json(r#"{"key": 1"#);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_trailing_comma_array() {
+            let result = parse_json("[1, 2,]");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_trailing_comma_object() {
+            let result = parse_json(r#"{"a": 1,}"#);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_missing_colon() {
+            let result = parse_json(r#"{"key" 1}"#);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_invalid_key() {
+            let result = parse_json(r#"{123: "value"}"#);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_missing_comma_array() {
+            let result = parse_json("[1 2 3]");
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn test_error_missing_comma_object() {
+            let result = parse_json(r#"{"a": 1 "b": 2}"#);
+            assert!(result.is_err());
         }
     }
 }

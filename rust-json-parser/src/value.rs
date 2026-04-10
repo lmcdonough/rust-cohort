@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
@@ -6,8 +7,8 @@ pub enum JsonValue {
     Boolean(bool),
     Number(f64),
     String(String),
-    Array(Vec<JsonValue>), // A Json Array: ordered list of any JSON values, Vec<JsonValue>: a growable heap allocated list that owns its elements
-    Object(HashMap<String, JsonValue>), // unordered dict, String keys bc HashMap must Own its keys
+    Array(Vec<JsonValue>),
+    Object(HashMap<String, JsonValue>),
 }
 
 impl JsonValue {
@@ -36,18 +37,13 @@ impl JsonValue {
         }
     }
 
-    // Returns a reference to the Vec inside Array, or None for any other variant.
-    // &self = borrow self (dont consume it)
-    // Option<&Vec<JsonValue>> = either a pointer to the Vec, or nothing
     pub fn as_array(&self) -> Option<&Vec<JsonValue>> {
         match self {
-            JsonValue::Array(arr) => Some(arr), // arr is already &Vec here
+            JsonValue::Array(arr) => Some(arr),
             _ => None,
         }
     }
 
-    // Returns a reference to the HashMap inside Object, or None for any other variant
-    // Exact same pattern as as_array() - just a different variant
     pub fn as_object(&self) -> Option<&HashMap<String, JsonValue>> {
         match self {
             JsonValue::Object(obj) => Some(obj),
@@ -55,22 +51,69 @@ impl JsonValue {
         }
     }
 
-    // Gets an element at index inside an Array variant
-    // index: usize - array indices are always non-negative in Rust
-    // Delegates to Vec's own .get() which returns Option<&T> (None if out of bounds)
     pub fn get_index(&self, index: usize) -> Option<&JsonValue> {
         match self {
-            JsonValue::Array(arr) => arr.get(index), // Vec::get returns None if out of bounds
-            _ => None, // if called on Object, Number, etc. - just none
+            JsonValue::Array(arr) => arr.get(index),
+            _ => None,
         }
     }
 
-    // Looks up a key inside an Object variant
-    // key: &str - HashMap<String,_> accepts &str for lookups via Rust's Borrow trait
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         match self {
             JsonValue::Object(obj) => obj.get(key),
             _ => None,
+        }
+    }
+}
+
+fn escape_json_string(s: &str) -> String {
+    let mut escaped = String::new();
+    for ch in s.chars() {
+        match ch {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
+}
+
+impl fmt::Display for JsonValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonValue::Null => write!(f, "null"),
+            JsonValue::Boolean(b) => write!(f, "{}", b),
+            JsonValue::String(s) => write!(f, "\"{}\"", escape_json_string(s)),
+            JsonValue::Number(n) => {
+                if n.fract() == 0.0 {
+                    write!(f, "{}", *n as i64)
+                } else {
+                    write!(f, "{}", n)
+                }
+            }
+            JsonValue::Array(arr) => {
+                write!(f, "[")?;
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            JsonValue::Object(map) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in map.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ",")?;
+                    }
+                    write!(f, "\"{}\":{}", escape_json_string(key), value)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -118,7 +161,6 @@ mod tests {
     }
     #[test]
     fn test_array_accessor() {
-        // Construct an Array directly (parse_array comes in Step 3)
         let value = JsonValue::Array(vec![
             JsonValue::Number(1.0),
             JsonValue::Number(2.0),
@@ -126,7 +168,6 @@ mod tests {
         ]);
         assert!(value.as_array().is_some());
         assert_eq!(value.as_array().unwrap().len(), 3);
-        // Wrong variant → None
         assert!(JsonValue::Null.as_array().is_none());
     }
 
@@ -138,7 +179,7 @@ mod tests {
             JsonValue::Number(30.0),
         ]);
         assert_eq!(value.get_index(1), Some(&JsonValue::Number(20.0)));
-        assert_eq!(value.get_index(5), None); // out of bounds → None
+        assert_eq!(value.get_index(5), None);
     }
 
     #[test]
@@ -148,7 +189,6 @@ mod tests {
         let value = JsonValue::Object(map);
         assert!(value.as_object().is_some());
         assert_eq!(value.as_object().unwrap().len(), 1);
-        // Wrong variant → None
         assert!(JsonValue::Null.as_object().is_none());
     }
 
@@ -158,13 +198,71 @@ mod tests {
         map.insert("name".to_string(), JsonValue::String("Alice".to_string()));
         map.insert("age".to_string(), JsonValue::Number(30.0));
         let value = JsonValue::Object(map);
-        // &str lookup — no .to_string() needed
         assert_eq!(
             value.get("name"),
             Some(&JsonValue::String("Alice".to_string()))
         );
         assert_eq!(value.get("missing"), None);
-        // Wrong variant → None
         assert_eq!(JsonValue::Null.get("key"), None);
+    }
+    #[cfg(test)]
+    mod display_tests {
+        use super::*;
+        use crate::parser::parse_json;
+        use std::collections::HashMap;
+
+        #[test]
+        fn test_display_primitives() {
+            assert_eq!(JsonValue::Null.to_string(), "null");
+            assert_eq!(JsonValue::Boolean(true).to_string(), "true");
+            assert_eq!(JsonValue::Boolean(false).to_string(), "false");
+            assert_eq!(JsonValue::Number(42.0).to_string(), "42");
+            assert_eq!(JsonValue::Number(3.14).to_string(), "3.14");
+            assert_eq!(
+                JsonValue::String("hello".to_string()).to_string(),
+                "\"hello\""
+            );
+        }
+
+        #[test]
+        fn test_display_array() {
+            let value = JsonValue::Array(vec![JsonValue::Number(1.0), JsonValue::Number(2.0)]);
+            assert_eq!(value.to_string(), "[1,2]");
+        }
+
+        #[test]
+        fn test_display_empty_containers() {
+            assert_eq!(JsonValue::Array(vec![]).to_string(), "[]");
+            assert_eq!(JsonValue::Object(HashMap::new()).to_string(), "{}");
+        }
+
+        #[test]
+        fn test_display_escape_string() {
+            let value = JsonValue::String("hello\nworld".to_string());
+            assert_eq!(value.to_string(), "\"hello\\nworld\"");
+        }
+
+        #[test]
+        fn test_display_escape_quotes() {
+            let value = JsonValue::String("say \"hi\"".to_string());
+            assert_eq!(value.to_string(), "\"say \\\"hi\\\"\"");
+        }
+
+        #[test]
+        fn test_display_nested() {
+            let value = parse_json(r#"{"arr": [1, 2]}"#).unwrap();
+            let output = value.to_string();
+            assert!(output.contains("\"arr\""));
+            assert!(output.contains("[1,2]"));
+        }
+
+        #[test]
+        fn test_display_nested_array() {
+            let value = JsonValue::Array(vec![JsonValue::Array(vec![
+                JsonValue::Number(1.0),
+                JsonValue::Number(2.0),
+            ])]);
+            assert_eq!(value.to_string(), "[[1,2]]");
+        }
     }
 }
