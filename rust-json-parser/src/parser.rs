@@ -51,18 +51,21 @@ impl JsonParser {
             });
         }
 
-        match self.tokens[self.position].clone() {
+        match &self.tokens[self.position] {
             Token::LeftBracket => self.parse_array(),
             Token::LeftBrace => self.parse_object(),
             Token::String(s) => {
+                let s = s.clone();
                 self.advance();
                 Ok(JsonValue::String(s))
             }
             Token::Number(n) => {
+                let n = *n;
                 self.advance();
                 Ok(JsonValue::Number(n))
             }
             Token::Boolean(b) => {
+                let b = *b;
                 self.advance();
                 Ok(JsonValue::Boolean(b))
             }
