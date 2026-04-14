@@ -105,8 +105,8 @@ mod tests {
             value: "12.34.56".to_string(),
             position: 0,
         };
-        format!("{:?}", token_error);
-        format!("{:?}", eof_error);
-        format!("{:?}", num_error);
+        let _ = format!("{:?}", token_error);
+        let _ = format!("{:?}", eof_error);
+        let _ = format!("{:?}", num_error);
     }
 }
