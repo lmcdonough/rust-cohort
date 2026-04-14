@@ -26,19 +26,18 @@ impl JsonParser {
         self.position >= self.tokens.len()
     }
 
-    fn advance(&mut self) -> Option<Token> {
-        if self.is_at_end() {
-            None
-        } else {
-            let token = self.tokens[self.position].clone();
+    fn current(&self) -> Option<&Token> {
+        self.tokens.get(self.position)
+    }
+
+    fn advance(&mut self) {
+        if !self.is_at_end() {
             self.position += 1;
-            Some(token)
         }
     }
 
     fn check(&self, expected: &Token) -> bool {
-        self.tokens
-            .get(self.position)
+        self.current()
             .map(|t| std::mem::discriminant(t) == std::mem::discriminant(expected))
             .unwrap_or(false)
     }
@@ -124,32 +123,41 @@ impl JsonParser {
     }
 
     fn parse_object_key(&mut self) -> Result<String> {
-        match self.advance() {
-            Some(Token::String(s)) => Ok(s),
-            Some(token) => Err(JsonError::UnexpectedToken {
-                expected: "string key".to_string(),
-                found: format!("{:?}", token),
-                position: self.position - 1,
-            }),
-            None => Err(JsonError::UnexpectedEndOfInput {
+        if self.is_at_end() {
+            return Err(JsonError::UnexpectedEndOfInput {
                 expected: "string key".to_string(),
                 position: self.position,
-            }),
+            });
+        }
+        if let Token::String(s) = &self.tokens[self.position] {
+            let s = s.clone();
+            self.advance();
+            Ok(s)
+        } else {
+            Err(JsonError::UnexpectedToken {
+                expected: "string key".to_string(),
+                found: format!("{:?}", self.tokens[self.position]),
+                position: self.position,
+            })
         }
     }
 
     fn expect_colon(&mut self) -> Result<()> {
-        match self.advance() {
-            Some(Token::Colon) => Ok(()),
-            Some(token) => Err(JsonError::UnexpectedToken {
-                expected: ":".to_string(),
-                found: format!("{:?}", token),
-                position: self.position - 1,
-            }),
-            None => Err(JsonError::UnexpectedEndOfInput {
+        if self.is_at_end() {
+            return Err(JsonError::UnexpectedEndOfInput {
                 expected: ":".to_string(),
                 position: self.position,
-            }),
+            });
+        }
+        if matches!(self.tokens[self.position], Token::Colon) {
+            self.advance();
+            Ok(())
+        } else {
+            Err(JsonError::UnexpectedToken {
+                expected: ":".to_string(),
+                found: format!("{:?}", self.tokens[self.position]),
+                position: self.position,
+            })
         }
     }
 
@@ -168,30 +176,29 @@ impl JsonParser {
             let value = self.parse_value()?;
             map.insert(key, value);
 
-            match self.advance() {
-                Some(Token::RightBrace) => break,
-                Some(Token::Comma) => {
-                    if self.check(&Token::RightBrace) {
-                        return Err(JsonError::UnexpectedToken {
-                            expected: "string key".to_string(),
-                            found: "}".to_string(),
-                            position: self.position,
-                        });
-                    }
-                }
-                Some(token) => {
+            if self.check(&Token::RightBrace) {
+                self.advance();
+                break;
+            } else if self.check(&Token::Comma) {
+                self.advance();
+                if self.check(&Token::RightBrace) {
                     return Err(JsonError::UnexpectedToken {
-                        expected: "} or ,".to_string(),
-                        found: format!("{:?}", token),
-                        position: self.position - 1,
-                    });
-                }
-                None => {
-                    return Err(JsonError::UnexpectedEndOfInput {
-                        expected: "} or ,".to_string(),
+                        expected: "string key".to_string(),
+                        found: "}".to_string(),
                         position: self.position,
                     });
                 }
+            } else if self.is_at_end() {
+                return Err(JsonError::UnexpectedEndOfInput {
+                    expected: "} or ,".to_string(),
+                    position: self.position,
+                });
+            } else {
+                return Err(JsonError::UnexpectedToken {
+                    expected: "} or ,".to_string(),
+                    found: format!("{:?}", self.tokens[self.position]),
+                    position: self.position,
+                });
             }
         }
         Ok(JsonValue::Object(map))
