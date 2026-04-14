@@ -120,6 +120,36 @@ impl JsonParser {
         Ok(JsonValue::Array(elements))
     }
 
+    fn parse_object_key(&mut self) -> Result<String> {
+        match self.advance() {
+            Some(Token::String(s)) => Ok(s),
+            Some(token) => Err(JsonError::UnexpectedToken {
+                expected: "string key".to_string(),
+                found: format!("{:?}", token),
+                position: self.position - 1,
+            }),
+            None => Err(JsonError::UnexpectedEndOfInput {
+                expected: "string key".to_string(),
+                position: self.position,
+            }),
+        }
+    }
+
+    fn expect_colon(&mut self) -> Result<()> {
+        match self.advance() {
+            Some(Token::Colon) => Ok(()),
+            Some(token) => Err(JsonError::UnexpectedToken {
+                expected: ":".to_string(),
+                found: format!("{:?}", token),
+                position: self.position - 1,
+            }),
+            None => Err(JsonError::UnexpectedEndOfInput {
+                expected: ":".to_string(),
+                position: self.position,
+            }),
+        }
+    }
+
     fn parse_object(&mut self) -> Result<JsonValue> {
         self.advance();
         let mut map = HashMap::new();
@@ -130,40 +160,8 @@ impl JsonParser {
         }
 
         loop {
-            let key = match self.advance() {
-                Some(Token::String(s)) => s,
-                Some(token) => {
-                    return Err(JsonError::UnexpectedToken {
-                        expected: "string key".to_string(),
-                        found: format!("{:?}", token),
-                        position: self.position - 1,
-                    });
-                }
-                None => {
-                    return Err(JsonError::UnexpectedEndOfInput {
-                        expected: "string key".to_string(),
-                        position: self.position,
-                    });
-                }
-            };
-
-            match self.advance() {
-                Some(Token::Colon) => {}
-                Some(token) => {
-                    return Err(JsonError::UnexpectedToken {
-                        expected: ":".to_string(),
-                        found: format!("{:?}", token),
-                        position: self.position - 1,
-                    });
-                }
-                None => {
-                    return Err(JsonError::UnexpectedEndOfInput {
-                        expected: ":".to_string(),
-                        position: self.position,
-                    });
-                }
-            }
-
+            let key = self.parse_object_key()?;
+            self.expect_colon()?;
             let value = self.parse_value()?;
             map.insert(key, value);
 
