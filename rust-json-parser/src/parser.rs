@@ -343,6 +343,20 @@ mod tests {
             assert_eq!(arr[2], JsonValue::Boolean(true));
             assert_eq!(arr[3], JsonValue::Null);
         }
+
+        #[test]
+        fn test_parse_nested_arrays() {
+            let value = parse_json("[[1, 2], [3, 4]]").unwrap();
+            let outer = value.as_array().unwrap();
+            assert_eq!(outer.len(), 2);
+            let first = outer[0].as_array().unwrap();
+            assert_eq!(first, &vec![JsonValue::Number(1.0), JsonValue::Number(2.0)]);
+            let second = outer[1].as_array().unwrap();
+            assert_eq!(
+                second,
+                &vec![JsonValue::Number(3.0), JsonValue::Number(4.0)]
+            );
+        }
     }
 
     #[cfg(test)]
@@ -414,6 +428,20 @@ mod tests {
             } else {
                 panic!("Expected array");
             }
+        }
+
+        #[test]
+        fn test_parse_deeply_nested() {
+            let value = parse_json(r#"{"a": {"b": {"c": [1, 2, {"d": true}]}}}"#).unwrap();
+            let a = value.get("a").unwrap();
+            let b = a.get("b").unwrap();
+            let c = b.get("c").unwrap();
+            let arr = c.as_array().unwrap();
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], JsonValue::Number(1.0));
+            assert_eq!(arr[1], JsonValue::Number(2.0));
+            let inner_obj = arr[2].get("d").unwrap();
+            assert_eq!(inner_obj, &JsonValue::Boolean(true));
         }
     }
 
