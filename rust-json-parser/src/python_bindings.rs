@@ -112,6 +112,56 @@ impl From<JsonError> for PyErr {
     }
 }
 
+// Import Python bool type for type checking
+use pyo3::types::PyBool;
+
+// Helper that converts any Python object into a Rust JsonValue (not exposed to Python)
+fn py_to_json_value(obj: &Bound<PyAny>) -> PyResult<JsonValue> {
+    // None check must come first
+    if obj.is_none() {
+        return Ok(JsonValue::Null);
+    }
+
+    // Bool MUST come before f64 - in Python, True/False are subclasses of int
+    if obj.is_instance_of::<PyBool>() {
+        let b = obj.extract::<bool>()?;
+        return Ok(JsonValue::Boolean(b));
+    }
+
+    // f64 covers all JSON numbers
+    if let Ok(n) = obj.extract::<f64>() {
+        return Ok(JsonValue::Number(n));
+    }
+
+    // String check
+    if let Ok(s) = obj.extract::<String>() {
+        return Ok(JsonValue::String(s));
+    }
+
+    // List -> recursively convert each element
+    if let Ok(list) = obj.downcast::<PyList>() {
+        let mut arr = Vec::new();
+        for item in list.iter() {
+            arr.push(py_to_json_value(&item)?);
+        }
+        return Ok(JsonValue::Array(arr));
+    }
+
+    // Dict -> recursively convert each value
+    if let Ok(dict) = obj.downcast::<PyDict>() {
+        let mut map = std::collections::HashMap::new();
+        for (key, value) in dict.iter() {
+            map.insert(key.extract::<String>()?, py_to_json_value(&value)?);
+        }
+        return Ok(JsonValue::Object(map));
+    }
+
+    // Anything else (datetime, custom class, etc.) is unsupported
+    Err(PyValueError::new_err(
+        "Unsupported type for JSON conversion",
+    ))
+}
+
 // Mark this function as callable from Python
 #[pyfunction]
 // py = GIL token (PyO3 injects this automatically), input = the JSON string
@@ -129,4 +179,16 @@ fn rust_json_parser(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Expose parse_json() to Python
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+fn parse_json_file<'py>(py: Python<'py>, path: &str) -> PyResult<Bound<'py, PyAny>> {
+    // Read file contents - ? auto-converts std::io::Eror -> Python IOError
+    let contents = std::fs::read_to_string(path)?;
+
+    // Parse the string - ? auto-converts JsonError -> Python ValueError
+    let result = rust_parse_json(&contents)?;
+
+    // Convert JsonValue -> Python object
+    result.into_pyobject(py)
 }
