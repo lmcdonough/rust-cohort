@@ -139,7 +139,7 @@ fn py_to_json_value(obj: &Bound<PyAny>) -> PyResult<JsonValue> {
     }
 
     // List -> recursively convert each element
-    if let Ok(list) = obj.downcast::<PyList>() {
+    if let Ok(list) = obj.cast::<PyList>() {
         let mut arr = Vec::new();
         for item in list.iter() {
             arr.push(py_to_json_value(&item)?);
@@ -148,7 +148,7 @@ fn py_to_json_value(obj: &Bound<PyAny>) -> PyResult<JsonValue> {
     }
 
     // Dict -> recursively convert each value
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         let mut map = std::collections::HashMap::new();
         for (key, value) in dict.iter() {
             map.insert(key.extract::<String>()?, py_to_json_value(&value)?);
@@ -191,4 +191,27 @@ fn parse_json_file<'py>(py: Python<'py>, path: &str) -> PyResult<Bound<'py, PyAn
 
     // Convert JsonValue -> Python object
     result.into_pyobject(py)
+}
+
+#[pyfunction]
+// signature attribute makes indent optional - callable as dumps(obj) or dumps(obj, indent=2)
+#[pyo3(signature = (obj, indent=None))]
+fn dumps(obj: &Bound<PyAny>, indent: Option<usize>) -> PyResult<String> {
+    // Convert Python object -> JsonValue using Step 5 helper
+    let value = py_to_json_value(obj)?;
+
+    // No indent = compact output via Display, indent = pretty printed
+    match indent {
+        None => Ok(value.to_string()),
+        Some(n) => Ok(value.pretty_print(n)),
+    }
+}
+
+// Register all pyfunctions so Python can import them
+#[pymodule]
+fn _rust_json_parser(m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(parse_json, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_json_file, m)?)?;
+    m.add_function(wrap_pyfunction!(dumps, m)?)?;
+    Ok(())
 }
