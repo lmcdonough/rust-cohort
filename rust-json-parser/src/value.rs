@@ -118,6 +118,64 @@ impl fmt::Display for JsonValue {
     }
 }
 
+impl JsonValue {
+    // Kick off pretty printing with 0 depth
+    pub fn pretty_print(&self, indent: usize) -> String {
+        self.pretty_print_recursive(indent, 0)
+    }
+
+    // Recursive helper that tracks current depth for indentation
+    fn pretty_print_recursive(&self, indent: usize, depth: usize) -> String {
+        let pad = " ".repeat(indent * depth);
+        let inner_pad = " ".repeat(indent * (depth + 1));
+
+        match self {
+            // Scalars just use the existing Display impl
+            JsonValue::Null => "null".to_string(),
+            JsonValue::Boolean(b) => b.to_string(),
+            JsonValue::Number(n) => n.to_string(),
+            JsonValue::String(s) => format!("\"{}\"", s),
+
+            // Each array element on its own indented line
+            JsonValue::Array(arr) => {
+                if arr.is_empty() {
+                    return "[]".to_string();
+                }
+                let items: Vec<String> = arr
+                    .iter()
+                    .map(|v| {
+                        format!(
+                            "{}{}",
+                            inner_pad,
+                            v.pretty_print_recursive(indent, depth + 1)
+                        )
+                    })
+                    .collect();
+                format!("[\n{}\n{}]", items.join(",\n"), pad)
+            }
+
+            // Each key value pair on its own indented line
+            JsonValue::Object(obj) => {
+                if obj.is_empty() {
+                    return "{}".to_string();
+                }
+                let items: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "{}\"{}\": {}",
+                            inner_pad,
+                            k,
+                            v.pretty_print_recursive(indent, depth + 1)
+                        )
+                    })
+                    .collect();
+                format!("{{\n{}\n{}}}", items.join(",\n"), pad)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

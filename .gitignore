@@ -25,3 +25,10 @@ Cargo.lock
 
 # Claude Code
 .claude/
+
+# Python / maturin
+**/.venv/
+**/.pytest_cache/
+**/__pycache__/
+**/*.so
+**/*.pyc
