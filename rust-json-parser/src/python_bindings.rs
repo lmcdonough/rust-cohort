@@ -3,6 +3,8 @@
 // pyo3::prelude::* gives us Python, PyResult, IntoPyObject, etc.
 use crate::parse_json as rust_parse_json;
 use pyo3::prelude::*;
+// Instant = monotonic clock, never goes backward (unlike SystemTime)
+use std::time::Instant;
 
 // PyDict = Python's dict type. PyList = Python's list type
 use pyo3::types::{PyDict, PyList};
@@ -173,6 +175,25 @@ fn parse_json<'py>(py: Python<'py>, input: &str) -> PyResult<Bound<'py, PyAny>> 
     result.into_pyobject(py)
 }
 
+/// Parses a JSON file from disk into a JsonValue tree.
+///
+/// Reads the entire file into memory, then delegates to [`parse_json`].
+///
+/// # Examples
+///
+/// ```ignore
+/// # // `ignore` because parse_json_file is only exposed to Python, not Rust callers.
+/// use rust_json_parser::parse_json_file;
+///
+/// let config = parse_json_file("config.json")?;
+/// println!("Loaded: {:?}", config);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns an I/O error if the file cannot be read, or any
+/// [`JsonError`] variant if parsing fails.
 #[pyfunction]
 fn parse_json_file<'py>(py: Python<'py>, path: &str) -> PyResult<Bound<'py, PyAny>> {
     // Read file contents - ? auto-converts std::io::Eror -> Python IOError
@@ -199,11 +220,62 @@ fn dumps(obj: &Bound<PyAny>, indent: Option<usize>) -> PyResult<String> {
     }
 }
 
+// #[pyfunction] = expose this fn to Python when the module loads
+#[pyfunction]
+// signature attribute = set Python-visible defaults (Rust has no default args)
+#[pyo3(signature = (json_str, iterations=1000))]
+// py: Python<'_> = GIL token, required to call into the Python interpreter
+// json_str: &str = borrowed string slice from Python (zero-copy)
+// iterations: usize = how many times to parse, averaging noise out
+// PyResult<(f64, f64, f64)> = Result wrapping a 3-tuple of seconds
+pub fn benchmark_performance(
+    py: Python<'_>,
+    json_str: &str,
+    iterations: usize,
+) -> PyResult<(f64, f64, f64)> {
+    // --- time the Rust parser ---
+    // start = snapshot of monotonic clock right before the loop
+    let start = Instant::now();
+    // loop `iterations` times, discarding the result with `_`
+    for _ in 0..iterations {
+        // ? propagates JsonError (auto-converted to PyErr via From impl)
+        let _ = rust_parse_json(json_str)?;
+    }
+    // .elapsed() = Duration since `start`; as_secs_f64() = f64 seconds
+    let rust_duration = start.elapsed().as_secs_f64();
+
+    // --- time Python's built-in json (written in C) ---
+    // py.import(...) = equivalent to Python's `import json`
+    let json_module = py.import("json")?;
+    // .getattr("loads") = equivalent to `json.loads` attribute lookup
+    let json_loads = json_module.getattr("loads")?;
+    let start = Instant::now();
+    for _ in 0..iterations {
+        // .call1((arg,)) = call with a 1-tuple of positional args
+        // note the trailing comma — makes it a tuple, not parens
+        let _ = json_loads.call1((json_str,))?;
+    }
+    let python_json_duration = start.elapsed().as_secs_f64();
+
+    // --- time simplejson (pure Python implementation) ---
+    let simplejson_module = py.import("simplejson")?;
+    let simplejson_loads = simplejson_module.getattr("loads")?;
+    let start = Instant::now();
+    for _ in 0..iterations {
+        let _ = simplejson_loads.call1((json_str,))?;
+    }
+    let simplejson_duration = start.elapsed().as_secs_f64();
+
+    // Ok wraps the tuple; PyO3 auto-converts (f64, f64, f64) to a Python tuple
+    Ok((rust_duration, python_json_duration, simplejson_duration))
+}
+
 // Register all pyfunctions so Python can import them
 #[pymodule]
 fn _rust_json_parser(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(parse_json, m)?)?;
     m.add_function(wrap_pyfunction!(parse_json_file, m)?)?;
     m.add_function(wrap_pyfunction!(dumps, m)?)?;
+    m.add_function(wrap_pyfunction!(benchmark_performance, m)?)?;
     Ok(())
 }
