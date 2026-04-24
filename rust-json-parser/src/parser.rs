@@ -50,11 +50,12 @@ impl JsonParser {
             });
         }
 
-        match &self.tokens[self.position] {
+        match &mut self.tokens[self.position] {
             Token::LeftBracket => self.parse_array(),
             Token::LeftBrace => self.parse_object(),
             Token::String(s) => {
-                let s = s.clone();
+                // borrow only — take ownership of the String in place; we advance past this slot and never revisit it
+                let s = std::mem::take(s);
                 self.advance();
                 Ok(JsonValue::String(s))
             }
@@ -82,7 +83,8 @@ impl JsonParser {
 
     fn parse_array(&mut self) -> Result<JsonValue> {
         self.advance();
-        let mut elements: Vec<JsonValue> = Vec::new();
+        // most JSON arrays are under 16 elements; avoids first few reallocations
+        let mut elements: Vec<JsonValue> = Vec::with_capacity(16);
 
         if self.check(&Token::RightBracket) {
             self.advance();
@@ -129,8 +131,9 @@ impl JsonParser {
                 position: self.position,
             });
         }
-        if let Token::String(s) = &self.tokens[self.position] {
-            let s = s.clone();
+        if let Token::String(s) = &mut self.tokens[self.position] {
+            // borrow only — take ownership of the String in place; we advance past this slot and never revisit it
+            let s = std::mem::take(s);
             self.advance();
             Ok(s)
         } else {
@@ -209,6 +212,32 @@ impl JsonParser {
     }
 }
 
+/// Parses a JSON string into a [`JsonValue`] tree.
+///
+/// Tokenizes the input, then recursively builds the value tree.
+/// The entire input must be valid JSON — trailing data causes an error.
+///
+/// # Examples
+///
+/// ```
+/// use rust_json_parser::{parse_json, JsonValue};
+///
+/// // parse a primitive
+/// let v = parse_json("42")?;
+/// assert_eq!(v, JsonValue::Number(42.0));
+///
+/// // parse an object
+/// let v = parse_json(r#"{"ok": true}"#)?;
+/// assert!(matches!(v, JsonValue::Object(_)));
+/// # Ok::<(), rust_json_parser::JsonError>(())
+/// ```
+///
+/// # Errors
+///
+/// Returns [`JsonError::UnexpectedToken`] when the grammar is violated
+/// (e.g. a stray comma), [`JsonError::UnexpectedEndOfInput`] for
+/// truncated input, or [`JsonError::InvalidNumber`] for malformed
+/// numeric literals.
 pub fn parse_json(input: &str) -> Result<JsonValue> {
     let mut parser = JsonParser::new(input)?;
     parser.parse()

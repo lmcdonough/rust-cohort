@@ -1,21 +1,61 @@
 use std::collections::HashMap;
 use std::fmt;
 
+/// Represents any valid JSON value after parsing.
+///
+/// JSON documents can be any one of six types. This enum mirrors the
+/// [JSON spec](https://www.json.org) exactly — no more, no less.
+///
+/// # Examples
+///
+/// ```
+/// use rust_json_parser::{parse_json, JsonValue};
+///
+/// let v = parse_json("42")?;
+/// assert!(matches!(v, JsonValue::Number(_)));
+/// # Ok::<(), rust_json_parser::JsonError>(())
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonValue {
+    /// The JSON `null` literal — represents absence of a value.
+    ///
+    /// Equivalent to Python's `None` or Rust's `Option::None`.
     Null,
+
+    /// A JSON boolean (`true` or `false`).
     Boolean(bool),
+
+    /// A JSON number, stored as `f64` for spec compliance.
+    ///
+    /// JSON does not distinguish integers from floats; all numbers are
+    /// held as 64-bit floats, matching Python's `json` module behavior.
     Number(f64),
+
+    /// A JSON string (already unescaped during parsing).
+    ///
+    /// Owned `String` because the parser produces new strings when
+    /// processing escape sequences like `\n` or `\uXXXX`.
     String(String),
+
+    /// A JSON array: an ordered list of values.
+    ///
+    /// Uses `Vec<JsonValue>` — like Python's `list`, grows dynamically on the heap.
     Array(Vec<JsonValue>),
+
+    /// A JSON object: unordered key-value pairs.
+    ///
+    /// Uses `HashMap<String, JsonValue>` — like Python's `dict`, O(1) average lookup.
+    /// Keys are owned `String` because JSON object keys must be strings.
     Object(HashMap<String, JsonValue>),
 }
 
 impl JsonValue {
+    /// Returns `true` if this value is [`JsonValue::Null`].
     pub fn is_null(&self) -> bool {
         matches!(self, JsonValue::Null)
     }
 
+    /// Returns the inner string slice if this is a [`JsonValue::String`], else `None`.
     pub fn as_str(&self) -> Option<&str> {
         match self {
             JsonValue::String(s) => Some(s.as_str()),
@@ -23,6 +63,7 @@ impl JsonValue {
         }
     }
 
+    /// Returns the inner `f64` if this is a [`JsonValue::Number`], else `None`.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             JsonValue::Number(n) => Some(*n),
@@ -30,6 +71,7 @@ impl JsonValue {
         }
     }
 
+    /// Returns the inner `bool` if this is a [`JsonValue::Boolean`], else `None`.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
             JsonValue::Boolean(b) => Some(*b),
@@ -37,6 +79,7 @@ impl JsonValue {
         }
     }
 
+    /// Returns a reference to the inner `Vec` if this is a [`JsonValue::Array`], else `None`.
     pub fn as_array(&self) -> Option<&Vec<JsonValue>> {
         match self {
             JsonValue::Array(arr) => Some(arr),
@@ -44,6 +87,7 @@ impl JsonValue {
         }
     }
 
+    /// Returns a reference to the inner `HashMap` if this is a [`JsonValue::Object`], else `None`.
     pub fn as_object(&self) -> Option<&HashMap<String, JsonValue>> {
         match self {
             JsonValue::Object(obj) => Some(obj),
@@ -51,6 +95,7 @@ impl JsonValue {
         }
     }
 
+    /// Indexes into a [`JsonValue::Array`] by position. Returns `None` for non-arrays or out-of-bounds indices.
     pub fn get_index(&self, index: usize) -> Option<&JsonValue> {
         match self {
             JsonValue::Array(arr) => arr.get(index),
@@ -58,6 +103,7 @@ impl JsonValue {
         }
     }
 
+    /// Looks up a key in a [`JsonValue::Object`]. Returns `None` for non-objects or missing keys.
     pub fn get(&self, key: &str) -> Option<&JsonValue> {
         match self {
             JsonValue::Object(obj) => obj.get(key),
@@ -119,7 +165,10 @@ impl fmt::Display for JsonValue {
 }
 
 impl JsonValue {
-    // Kick off pretty printing with 0 depth
+    /// Returns a pretty-printed JSON string with `indent` spaces per level.
+    ///
+    /// Pass `2` for typical 2-space indentation, `4` for 4-space, etc.
+    /// Use [`std::fmt::Display`] (e.g. `value.to_string()`) for compact output.
     pub fn pretty_print(&self, indent: usize) -> String {
         self.pretty_print_recursive(indent, 0)
     }

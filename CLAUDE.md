@@ -15,11 +15,12 @@ Rust learning project for cohort-based coursework. Contains exercises, assignmen
   - `src/lib.rs` — Module declarations and public re-exports
   - `src/main.rs` — CLI entry point demonstrating tokenization
   - `python/rust_json_parser/` — Python package (editable install via maturin)
-    - `__init__.py` — re-exports `parse_json`, `parse_json_file`, `dumps` from the compiled extension
-    - `__main__.py` — `python -m rust_json_parser` CLI (stdin / file / literal arg)
+    - `__init__.py` — re-exports `parse_json`, `parse_json_file`, `dumps`, `benchmark_performance` from the compiled extension
+    - `__main__.py` — `python -m rust_json_parser` CLI (stdin / file / literal arg, plus `--benchmark` mode vs `json` (C) and `simplejson`)
   - `tests/test_python_integration.py` — pytest suite for the Python bindings (45 tests)
   - `Cargo.toml` — crate manifest; `python` is an opt-in feature, not default
-  - `pyproject.toml` — maturin build config; activates the `python` cargo feature for wheel builds
+  - `pyproject.toml` — maturin build config; activates the `python` cargo feature for wheel builds; declares runtime deps (`typer`, `simplejson`)
+  - `benchmarks_baseline.md` / `benchmarks_optimized.md` — pre- and post-optimization benchmark numbers with deltas and analysis (week 6)
 
 ## Tech Stack
 
@@ -48,15 +49,23 @@ cargo clippy -- -D warnings
 # Python bindings (requires venv with maturin + pytest installed)
 python3 -m venv .venv
 source .venv/bin/activate
-pip install maturin pytest
-maturin develop                  # builds + installs the extension into the active venv
+pip install maturin pytest typer simplejson
+maturin develop                  # debug build; use --release for benchmarking
 pytest tests/test_python_integration.py
 python -m rust_json_parser '{"hi": 1}'
+python -m rust_json_parser --benchmark   # compare vs json (C) and simplejson
 ```
 
 ## CI
 
 GitHub Actions workflow at `.github/workflows/ci.yml` runs on pushes to `main`/`week*` and PRs to `main`. It exercises the full local validation surface: build, `cargo test`, `cargo fmt --check`, `cargo clippy -D warnings`, plus the Python integration tests (build the extension with `maturin develop`, then `pytest`).
+
+## Performance Notes (week 6)
+
+- Hot path allocates `String`/`Vec` with `with_capacity` to skip early reallocs (see `src/tokenizer.rs` and `parse_array` in `src/parser.rs`).
+- `parse_value` and `parse_object_key` use `std::mem::take` to move `String` out of `Token::String` slots instead of cloning — the parser advances past each slot exactly once, so leaving `String::default()` behind is safe.
+- When adding new parser code, prefer `match` over `map_err` closures if the error needs to consume an owned buffer — closures force a clone because the buffer may still be needed on the success path.
+- Benchmark with a release build (`maturin develop --release`) before comparing numbers; debug builds are 10–100x slower.
 
 ## Code Conventions
 

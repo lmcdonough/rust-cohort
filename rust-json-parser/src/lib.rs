@@ -1,3 +1,39 @@
+//! # rust_json_parser
+//!
+//! A JSON parser written in Rust, exposed to Python via PyO3.
+//!
+//! This crate tokenizes, parses, and serializes JSON data with
+//! safe error handling and zero-copy string views where possible.
+//!
+//! ## Features
+//!
+//! - Full JSON spec support: null, booleans, numbers, strings, arrays, objects
+//! - Descriptive errors with position information
+//! - Python bindings via PyO3 for cross-language use
+//! - Pretty-printing with configurable indentation
+//!
+//! ## Quick Start
+//!
+//! ```
+//! use rust_json_parser::{parse_json, JsonValue};
+//!
+//! let value = parse_json(r#"{"name": "Levi", "year": 2026}"#)?;
+//! assert!(matches!(value, JsonValue::Object(_)));
+//! # Ok::<(), rust_json_parser::JsonError>(())
+//! ```
+//!
+//! ## Error Handling
+//!
+//! All parsing functions return [`Result<JsonValue, JsonError>`]. See
+//! [`JsonError`] for the full list of error variants.
+
+// #! = attribute applied to the ENTIRE crate (not next item)
+// warn = emit warning (not error) — lets you iterate without blocking builds
+// missing_docs = built-in lint for undocumented pub items
+// rustdoc::broken_intra_doc_links = broken [`Foo`] references
+#![warn(missing_docs)]
+#![warn(rustdoc::broken_intra_doc_links)]
+
 mod error;
 mod parser;
 mod tokenizer;
@@ -8,6 +44,7 @@ pub use parser::parse_json;
 pub use tokenizer::{Token, tokenize};
 pub use value::JsonValue;
 
+/// Convenience alias for `std::result::Result<T, JsonError>`.
 pub type Result<T> = std::result::Result<T, JsonError>;
 
 #[cfg(test)]

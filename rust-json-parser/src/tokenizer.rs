@@ -53,7 +53,8 @@ impl Tokenizer {
     // Reads a quoted JSON string from chars at position and outputs Token::String or a JsonError.
     fn tokenize_string(&mut self) -> Result<Token, JsonError> {
         let start = self.position;
-        let mut s = String::new();
+        // pre-allocate to avoid repeated heap reallocations as the string grows
+        let mut s = String::with_capacity(64);
         loop {
             match self.peek() {
                 Some('"') => {
@@ -75,7 +76,8 @@ impl Tokenizer {
                         Some('t') => s.push('\t'),
                         // Step 4 will add Some('u') here for unicode
                         Some('u') => {
-                            let mut hex_str = String::new();
+                            // exactly 4 hex digits will be pushed; pre-size to skip any reallocation
+                            let mut hex_str = String::with_capacity(4);
                             for _ in 0..4 {
                                 match self.advance() {
                                     Some(c) if c.is_ascii_hexdigit() => {
@@ -89,12 +91,16 @@ impl Tokenizer {
                                     }
                                 }
                             }
-                            let code_point = u32::from_str_radix(&hex_str, 16).map_err(|_| {
-                                JsonError::InvalidUnicode {
-                                    sequence: hex_str.clone(),
-                                    position: self.position,
+                            // borrow only — match instead of map_err so hex_str can move into whichever error arm fires
+                            let code_point = match u32::from_str_radix(&hex_str, 16) {
+                                Ok(cp) => cp,
+                                Err(_) => {
+                                    return Err(JsonError::InvalidUnicode {
+                                        sequence: hex_str,
+                                        position: self.position,
+                                    });
                                 }
-                            })?;
+                            };
                             let ch =
                                 char::from_u32(code_point).ok_or(JsonError::InvalidUnicode {
                                     sequence: hex_str,
@@ -135,7 +141,8 @@ impl Tokenizer {
     // Reads a JSON number from chars at position and outputs Token::Number or InvalidNumber.
     fn tokenize_number(&mut self) -> Result<Token, JsonError> {
         let start = self.position;
-        let mut num_str = String::new();
+        // pre-allocate a sensible default for typical JSON numeric literals
+        let mut num_str = String::with_capacity(16);
         while !self.is_at_end() {
             match self.peek() {
                 Some(c) if c.is_ascii_digit() || c == '.' || c == '-' => {
@@ -145,19 +152,24 @@ impl Tokenizer {
                 _ => break,
             }
         }
-        let number = num_str
-            .parse::<f64>()
-            .map_err(|_| JsonError::InvalidNumber {
-                value: num_str.clone(),
-                position: start,
-            })?;
+        // borrow only — match instead of map_err so num_str can move into the error arm
+        let number = match num_str.parse::<f64>() {
+            Ok(n) => n,
+            Err(_) => {
+                return Err(JsonError::InvalidNumber {
+                    value: num_str,
+                    position: start,
+                });
+            }
+        };
         Ok(Token::Number(number))
     }
 
     // Reads an alphabetic keyword from chars at position and outputs true/false/null tokens or an error.
     fn tokenize_keyword(&mut self) -> Result<Token, JsonError> {
         let start = self.position;
-        let mut keyword = String::new();
+        // JSON keywords are at most 5 chars (`false`); pre-size to avoid any reallocation
+        let mut keyword = String::with_capacity(8);
         while !self.is_at_end() {
             match self.peek() {
                 Some(c) if c.is_alphabetic() => {
@@ -236,20 +248,44 @@ impl Tokenizer {
     }
 }
 
+/// A single lexical token produced by [`tokenize`].
+///
+/// Tokens are the atoms the parser consumes — structural punctuation
+/// (`{`, `}`, `[`, `]`, `,`, `:`) plus the four value-bearing literals.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    /// The `{` character — starts a JSON object.
     LeftBrace,
+    /// The `}` character — ends a JSON object.
     RightBrace,
+    /// The `[` character — starts a JSON array.
     LeftBracket,
+    /// The `]` character — ends a JSON array.
     RightBracket,
+    /// The `,` separator between array elements or object members.
     Comma,
+    /// The `:` separator between an object key and its value.
     Colon,
+    /// A JSON string literal, already unescaped.
     String(String),
+    /// A JSON number literal, parsed as `f64`.
     Number(f64),
+    /// A JSON boolean literal (`true` or `false`).
     Boolean(bool),
+    /// The JSON `null` literal.
     Null,
 }
 
+/// Tokenizes a JSON input string into a flat `Vec<Token>`.
+///
+/// Convenience wrapper around the internal `Tokenizer`. The parser
+/// consumes the resulting token stream; end users typically call
+/// [`crate::parse_json`] instead.
+///
+/// # Errors
+///
+/// Returns a [`JsonError`] for invalid escapes, malformed numbers,
+/// unterminated strings, or unexpected characters.
 pub fn tokenize(input: &str) -> Result<Vec<Token>, JsonError> {
     Tokenizer::new(input).tokenize()
 }
