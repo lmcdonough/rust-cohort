@@ -130,11 +130,11 @@ impl JsonValue {
         let inner_pad = " ".repeat(indent * (depth + 1));
 
         match self {
-            // Scalars just use the existing Display impl
-            JsonValue::Null => "null".to_string(),
-            JsonValue::Boolean(b) => b.to_string(),
-            JsonValue::Number(n) => n.to_string(),
-            JsonValue::String(s) => format!("\"{}\"", s),
+            // Scalars delegate to the Display impl so formatting/escaping stays consistent
+            JsonValue::Null
+            | JsonValue::Boolean(_)
+            | JsonValue::Number(_)
+            | JsonValue::String(_) => format!("{}", self),
 
             // Each array element on its own indented line
             JsonValue::Array(arr) => {
@@ -143,11 +143,11 @@ impl JsonValue {
                 }
                 let items: Vec<String> = arr
                     .iter()
-                    .map(|v| {
+                    .map(|value| {
                         format!(
                             "{}{}",
                             inner_pad,
-                            v.pretty_print_recursive(indent, depth + 1)
+                            value.pretty_print_recursive(indent, depth + 1)
                         )
                     })
                     .collect();
@@ -161,12 +161,12 @@ impl JsonValue {
                 }
                 let items: Vec<String> = obj
                     .iter()
-                    .map(|(k, v)| {
+                    .map(|(key, value)| {
                         format!(
                             "{}\"{}\": {}",
                             inner_pad,
-                            k,
-                            v.pretty_print_recursive(indent, depth + 1)
+                            escape_json_string(key),
+                            value.pretty_print_recursive(indent, depth + 1)
                         )
                     })
                     .collect();
