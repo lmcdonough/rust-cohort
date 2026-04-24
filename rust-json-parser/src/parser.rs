@@ -519,7 +519,7 @@ mod tests {
             assert_eq!(JsonValue::Boolean(true).to_string(), "true");
             assert_eq!(JsonValue::Boolean(false).to_string(), "false");
             assert_eq!(JsonValue::Number(42.0).to_string(), "42");
-            assert_eq!(JsonValue::Number(3.14).to_string(), "3.14");
+            assert_eq!(JsonValue::Number(2.5).to_string(), "2.5");
             assert_eq!(
                 JsonValue::String("hello".to_string()).to_string(),
                 "\"hello\""
