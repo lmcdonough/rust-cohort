@@ -3,4 +3,19 @@ name = "rust-json-parser"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "rust_json_parser"
+# cdylib = Python-loadable .so/.dylib file
+# rlib = regular Rust library for cargo test
+crate-type = ["cdylib", "rlib"]
+
+
 [dependencies]
+pyo3 = { version = "0.27", optional = true }
+
+[features]
+# Keep default empty so `cargo test` doesn't pull in pyo3's extension-module,
+# which can't link a test binary against libpython. Maturin activates the
+# `python` feature explicitly via pyproject.toml when building the wheel.
+default = []
+python = ["dep:pyo3", "pyo3/extension-module"]

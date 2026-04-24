@@ -44,3 +44,8 @@ mod tests {
         }
     }
 }
+
+// Only compile Python bindings when the "python" feature is active
+// This lets 'cargo test' work without Python installed
+#[cfg(feature = "python")]
+mod python_bindings;

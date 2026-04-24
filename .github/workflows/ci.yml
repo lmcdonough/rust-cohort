@@ -7,7 +7,34 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust-json-parser
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run Rust tests
+        run: cargo test --verbose
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Clippy (python feature)
+        run: cargo clippy --features python --all-targets -- -D warnings
+
+  python:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -17,14 +44,26 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build
-        run: cargo build --verbose
+      - name: Set up Python 3.12
+        run: |
+          # ubuntu-latest already ships Python 3.12; avoid setup-python so the
+          # job also runs cleanly under `act` (whose default images don't
+          # expose node at an exec-findable path for JS-based actions).
+          python3 --version
+          python3 -m venv .venv
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Install maturin and pytest
+        run: |
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install maturin pytest
 
-      - name: Check formatting
-        run: cargo fmt -- --check
+      - name: Build and install extension
+        run: |
+          source .venv/bin/activate
+          maturin develop --release
 
-      - name: Clippy
-        run: cargo clippy -- -D warnings
+      - name: Run Python integration tests
+        run: |
+          source .venv/bin/activate
+          pytest tests/test_python_integration.py -v

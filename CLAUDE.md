@@ -6,30 +6,57 @@ Rust learning project for cohort-based coursework. Contains exercises, assignmen
 
 ## Project Structure
 
-- `rust-json-parser/` — A JSON parser built incrementally over multiple weeks
+- `rust-json-parser/` — A JSON parser + Python bindings built incrementally over multiple weeks
   - `src/tokenizer.rs` — Lexer that converts JSON strings into tokens with position tracking
-  - `src/parser.rs` — Parses token streams into `JsonValue` types (primitives only for now)
-  - `src/error.rs` — `JsonError` enum with `UnexpectedToken`, `UnexpectedEndOfInput`, `InvalidNumber` variants
-  - `src/value.rs` — `JsonValue` enum (`Null`, `Boolean`, `Number`, `String`) with accessor methods
+  - `src/parser.rs` — Parses token streams into `JsonValue` (primitives, arrays, objects, nested)
+  - `src/error.rs` — `JsonError` enum: `UnexpectedToken`, `UnexpectedEndOfInput`, `InvalidNumber`, `InvalidEscape`, `InvalidUnicode`
+  - `src/value.rs` — `JsonValue` enum (`Null`, `Boolean`, `Number`, `String`, `Array`, `Object`) with accessors, `Display`, and `pretty_print`
+  - `src/python_bindings.rs` — PyO3 bindings gated behind the `python` cargo feature
   - `src/lib.rs` — Module declarations and public re-exports
   - `src/main.rs` — CLI entry point demonstrating tokenization
+  - `python/rust_json_parser/` — Python package (editable install via maturin)
+    - `__init__.py` — re-exports `parse_json`, `parse_json_file`, `dumps` from the compiled extension
+    - `__main__.py` — `python -m rust_json_parser` CLI (stdin / file / literal arg)
+  - `tests/test_python_integration.py` — pytest suite for the Python bindings (45 tests)
+  - `Cargo.toml` — crate manifest; `python` is an opt-in feature, not default
+  - `pyproject.toml` — maturin build config; activates the `python` cargo feature for wheel builds
 
 ## Tech Stack
 
-- **Language**: Rust (latest stable)
-- **Build System**: Cargo
-- **Testing**: Built-in `cargo test`
+- **Language**: Rust (latest stable), Python 3.12+
+- **Build System**: Cargo (Rust), maturin (Python extension)
+- **Python FFI**: PyO3 0.27
+- **Testing**: `cargo test` (Rust), `pytest` (Python integration)
+
+## Cargo Features
+
+- `default = []` — no features on by default, so `cargo test` builds without linking to libpython
+- `python` — enables `pyo3` with `extension-module`; activated by maturin via `pyproject.toml`
 
 ## Development Commands
 
+All commands run from inside `rust-json-parser/` (the crate is not a workspace member).
+
 ```bash
+# Rust
 cargo build
-cargo run -p rust-json-parser
-cargo test -p rust-json-parser
-cargo check
-cargo fmt
-cargo clippy
+cargo test                       # runs 65 unit/integration tests, no Python required
+cargo check --features python    # verify bindings still compile
+cargo fmt -- --check
+cargo clippy -- -D warnings
+
+# Python bindings (requires venv with maturin + pytest installed)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install maturin pytest
+maturin develop                  # builds + installs the extension into the active venv
+pytest tests/test_python_integration.py
+python -m rust_json_parser '{"hi": 1}'
 ```
+
+## CI
+
+GitHub Actions workflow at `.github/workflows/ci.yml` runs on pushes to `main`/`week*` and PRs to `main`. It exercises the full local validation surface: build, `cargo test`, `cargo fmt --check`, `cargo clippy -D warnings`, plus the Python integration tests (build the extension with `maturin develop`, then `pytest`).
 
 ## Code Conventions
 
