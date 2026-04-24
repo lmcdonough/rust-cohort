@@ -173,14 +173,6 @@ fn parse_json<'py>(py: Python<'py>, input: &str) -> PyResult<Bound<'py, PyAny>> 
     result.into_pyobject(py)
 }
 
-// Register the module so Python can import it: `import rust_json_parser`
-#[pymodule]
-fn rust_json_parser(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Expose parse_json() to Python
-    m.add_function(wrap_pyfunction!(parse_json, m)?)?;
-    Ok(())
-}
-
 #[pyfunction]
 fn parse_json_file<'py>(py: Python<'py>, path: &str) -> PyResult<Bound<'py, PyAny>> {
     // Read file contents - ? auto-converts std::io::Eror -> Python IOError
